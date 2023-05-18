@@ -1,0 +1,49 @@
+#!/bin/bash
+# depends on GNU TAR
+# author jjm2473
+
+TAR=tar
+gtar --version >/dev/null 2>&1 && TAR=gtar
+
+usage() {
+    echo "$0 ABC.ipk"
+    echo "    Extract ABC.ipk to ABC"
+}
+
+[[ -z "$1" ]] && {
+    usage
+    exit 0
+}
+
+IPK=$1
+
+[[ -f "$1" ]] || {
+    echo "$1 does not existed" >&2
+    exit 1
+}
+
+DIR=${IPK%%.ipk}
+
+[[ -e "$DIR" ]] && {
+    echo "target dir $DIR already exists, please delete it" >&2
+    exit 1
+}
+
+mkdir -p "$DIR"
+
+cat "$IPK" | $TAR -C "$DIR" -xz
+
+[[ -f "$DIR/control.tar.gz" ]] || {
+    echo "extract failed, or it's not a IPK file" >&2
+    exit 1
+}
+
+(
+    cd "$DIR"
+    [[ -f data.tar.gz ]] && cat data.tar.gz | $TAR -xz
+    mkdir CONTROL || exit 1
+    cat control.tar.gz | $TAR -C CONTROL -xz
+    rm -f data.tar.gz control.tar.gz debian-binary
+)
+
+echo "Successfully unpack $IPK to $DIR"

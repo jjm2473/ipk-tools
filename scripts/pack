@@ -1,0 +1,61 @@
+#!/bin/bash
+# depends on GNU TAR/SED
+# author jjm2473
+
+TAR=tar
+gtar --version >/dev/null 2>&1 && TAR=gtar
+SED=sed
+gsed --version >/dev/null 2>&1 && SED=gsed
+
+usage() {
+    echo "$0 ABC"
+    echo "    Pack ABC to ABC/../pkgname_version-release_arch.ipk"
+}
+
+[[ -z "$1" ]] && {
+    usage
+    exit 0
+}
+
+DIR=${1%%/}
+
+[[ -d "$DIR" ]] || {
+    echo "$DIR does not existed" >&2
+    exit 1
+}
+
+[[ -f "$DIR/CONTROL/control" ]] || {
+    echo "$DIR/CONTROL/control does not existed, maybe it's not an unpacked IPK" >&2
+    exit 1
+}
+
+IPK=$(
+    eval $(grep -E '^(Package|Version|Architecture): ' "$DIR/CONTROL/control" | $SED -e 's/: /=/')
+    eval echo "\${Package}_\${Version}_\${Architecture}.ipk"
+)
+
+find "$DIR" -name '.DS_Store' -exec rm -f '{}' ';'
+
+DESTDIR=$( cd "$DIR/.." ; echo $PWD; )
+
+TMPDIR="$DESTDIR/IPKG_BUILD.$$"
+mkdir "$TMPDIR"
+echo "CONTROL" > "$TMPDIR/tarX"
+
+TIMESTAMP=$(date)
+
+$TAR -X "$TMPDIR/tarX" -cpzf "$TMPDIR/data.tar.gz" -C "$DIR" --numeric-owner --owner 0 --group 0 --format=gnu --sort=name --mtime="$TIMESTAMP" . || exit 1
+
+installed_size=$(stat -c "%s" "$TMPDIR"/data.tar.gz 2>/dev/null || stat -f "%z" "$TMPDIR"/data.tar.gz 2>/dev/null)
+[[ -n "$installed_size" ]] && $SED -i -e "s/^Installed-Size: .*/Installed-Size: $installed_size/" \
+	"$DIR/CONTROL/control"
+
+$TAR -czf "$TMPDIR/control.tar.gz" -C "$DIR/CONTROL" --numeric-owner --owner 0 --group 0 --format=gnu --sort=name --mtime="$TIMESTAMP" . || exit 1
+
+echo "2.0" > "$TMPDIR/debian-binary"
+
+$TAR -czf "$DESTDIR/$IPK" -C "$TMPDIR" --numeric-owner --owner 0 --group 0 --format=gnu --sort=name --mtime="$TIMESTAMP" ./debian-binary ./data.tar.gz ./control.tar.gz || exit 1
+
+rm -rf "$TMPDIR"
+
+echo "Successfully package $DIR to $DESTDIR/$IPK"
